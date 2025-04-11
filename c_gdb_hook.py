@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-GDB Hook Script for Debugging
+GDB Hook Script for RISC-V Debugging
+This script provides enhanced debugging information with colored output and assembly code display.
 """
 
 import gdb
@@ -906,22 +907,25 @@ class CustomHelpCommand(gdb.Command):
             debug_display.formatter.bold("-" * 20),
             "Display Toggle Commands:",
             "  c-toggle-*  - Toggle [thread,registers,backtrace,assembly,source,variable,memory,commands] display",
-            "Example c-togggle-thread - Toggle thread display"
             "",
             "Display Enable/Disable Commands:",
             "  c-enable-*  - Enable [thread,registers,backtrace,assembly,source,variable,memory,commands] display",
             "  c-disable-* - Disable [thread,registers,backtrace,assembly,source,variable,memory,commands] display",
             "",
             "Header Information Control:",
-            "  c-enable-display-settings - Enable display settings information",
+            "  c-enable-display-settings  - Enable display settings information",
             "  c-disable-display-settings - Disable display settings information",
-            "  c-enable-display-order    - Enable display order information",
-            "  c-disable-display-order   - Disable display order information",
+            "  c-enable-display-order     - Enable display order information",
+            "  c-disable-display-order    - Disable display order information",
             "",
             "Display Management:",
             "  c-show [clear]     - Show debug information (with optional screen clear)",
-            "  c-clear           - Clear the screen",
-            "  c-reorder <order> - Change display order (e.g., thread,backtrace,source,registers,variables,memory,assembly,commands)",
+            "  c-clear            - Clear the screen",
+            "  c-reorder <order>  - Change display order (e.g., thread,backtrace,source,registers,variables,memory,assembly,commands)",
+            "",
+            debug_display.formatter.info("Setting Management"),
+            debug_display.formatter.bold("-" * 20),
+            "  c-set <setting> <value> - Set a specific setting, c-set help for more information",
             "",
             debug_display.formatter.info("Current Settings Status"),
             debug_display.formatter.bold("-" * 20),
@@ -932,11 +936,102 @@ class CustomHelpCommand(gdb.Command):
             "",
             debug_display.formatter.info("Help"),
             debug_display.formatter.bold("-" * 20),
-            "  c-help            - Show this help message",
+            "  c-help    - Show this help message",
             "",
             debug_display.formatter.info("Note: All commands start with 'c-' prefix")
         ]
         print("\n".join(help_text))
+
+class SetCommand(gdb.Command):
+    """Command to configure debug display settings"""
+    
+    def __init__(self):
+        super(SetCommand, self).__init__("c-set", gdb.COMMAND_USER)
+
+    def set_display_settings(self, item_list: str, value: bool):
+        blocks = [block.strip().lower() for block in item_list.split(",")]
+        success_list = []
+        for item in blocks:
+            if item == "thread":
+                debug_display.settings.show_thread_id = value
+                success_list.append(item)
+            elif item == "backtrace":
+                debug_display.settings.show_backtrace = value
+                success_list.append(item)
+            elif item == "source":
+                debug_display.settings.show_source = value
+                success_list.append(item)
+            elif item == "registers":
+                debug_display.settings.show_registers = value
+                success_list.append(item)
+            elif item == "variables":
+                debug_display.settings.show_variables = value
+                success_list.append(item)
+            elif item == "memory":
+                debug_display.settings.show_memory = value
+                success_list.append(item)
+            elif item == "assembly":
+                debug_display.settings.show_assembly = value
+                success_list.append(item)
+            elif item == "commands":
+                debug_display.settings.show_commands = value
+                success_list.append(item)
+        if success_list:
+            print(debug_display.formatter.success(f"Display settings updated: {', '.join(success_list)}"))
+        else:
+            print(debug_display.formatter.error("Invalid display settings"))
+
+
+    def invoke(self, arg, from_tty):
+        if not arg:
+            print(debug_display.formatter.error("Please specify a setting to configure"))
+            print(debug_display.formatter.info("Available settings:"))
+            print(debug_display.formatter.info("  [enable|disable] <list>   - Show/hide display (e.g., thread,backtrace,source,registers,variables,memory,assembly,commands)"))
+            print(debug_display.formatter.info("  order <list>              - Set display order (e.g., thread,backtrace,source,registers,variables,memory,assembly,commands)"))
+            print(debug_display.formatter.info("  source-line <start> <end> - Set source line range (e.g., c-set source-line -5 10)"))
+            return
+
+        args = arg.split()
+        setting = args[0].lower()
+
+        if setting == "enable":
+            value = args[1].lower() if len(args) > 1 else None
+            if not value:
+                print(debug_display.formatter.error("Please specify the list of items to enable"))
+                print(debug_display.formatter.info("Example: c-set enable thread,backtrace,source,registers,variables,memory,assembly,commands"))
+                return
+            self.set_display_settings(value, True)
+        elif setting == "disable":
+            value = args[1].lower() if len(args) > 1 else None
+            if not value:
+                print(debug_display.formatter.error("Please specify the list of items to disable"))
+                print(debug_display.formatter.info("Example: c-set disable thread,backtrace,source,registers,variables,memory,assembly,commands"))
+                return
+            self.set_display_settings(value, False)
+        elif setting == "order":
+            value = args[1].lower() if len(args) > 1 else None
+            if not value:
+                print(debug_display.formatter.error("Please specify the new display order"))
+                print(debug_display.formatter.info("Example: c-set order thread,backtrace,source,registers,variables,memory,assembly,commands"))
+                return
+            if debug_display.settings.reorder_display(value):
+                print(debug_display.formatter.success("Display order updated successfully"))
+                print(debug_display.formatter.info(f"New order: {debug_display.settings.get_display_order()}"))
+            else:
+                print(debug_display.formatter.error("Invalid order. Use: thread,backtrace,source,registers,variables,memory,assembly,commands"))
+        elif setting == "source-line":
+            try:
+                start = int(args[1]) if len(args) > 2 else None
+                end = int(args[2]) if len(args) > 2 else None
+            except Exception as e:
+                print(debug_display.formatter.error("Please specify the source line range to set"))
+                print(debug_display.formatter.info("Example: c-set source-line -5 10"))
+                return
+            debug_display.source_display.lines_before = -start
+            debug_display.source_display.lines_after = end
+        else:
+            print(debug_display.formatter.error(f"Unknown setting: {setting}"))
+            print(debug_display.formatter.info("Available settings: display-settings, display-order, order"))
 
 class AddCommandCommand(gdb.Command):
     """Command to add a custom GDB command to display"""
@@ -1157,6 +1252,7 @@ ShowDebugCommand()
 ClearScreenCommand()
 ReorderDisplayCommand()
 CustomHelpCommand()
+SetCommand()
 
 def start_handler(event):
     """Handler for program start"""
@@ -1178,5 +1274,4 @@ gdb.events.stop.connect(stop_handler)
 #gdb.events.exited.connect(stop_handler)
 #gdb.events.new_objfile.connect(start_handler)
 
-print(debug_display.formatter.bold("Run c-help for c-gdb-hook help"))
 
